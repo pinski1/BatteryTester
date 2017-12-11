@@ -15,7 +15,6 @@
 */
 #include <SD.h>
 #include <Wire.h>
-#include "RTClib.h"
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <elapsedMillis.h>
@@ -38,13 +37,11 @@
 #define ONE_WIRE_BUS  2
 
 /** Class instantiations */
-RTC_DS1307 RTC;
-DateTime now;
 File logFile;
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature tempSensor(&oneWire);
 char fileName[] = "LOGGER00.CSV";
-int offsetCurrent = 0;
+int offsetCurrent = 512; // set default
 void printMilliValues(unsigned int numb);
 elapsedMillis timeElapsed;
 
@@ -63,7 +60,6 @@ void setup(void) {
   digitalWrite(LOAD_ENB, LOW);
 
   Serial.begin(115200);
-  Wire.begin();
   tempSensor.begin();
 
 
@@ -72,10 +68,10 @@ void setup(void) {
   if ((analogRead(V_SEN) * V_RATIO) != 0)
   {
     Serial.print(F("Sensor calibration failed. Reading: "));
-    Serial.print(analogRead(V_SEN) * V_RATIO, DEC);
-    Serial.print(F("mV and "));
-    Serial.print(analogRead(I_SEN) * I_RATIO, DEC);
-    Serial.print(F("mA.\r\n"));
+    printMilliValues(analogRead(V_SEN) * V_RATIO);
+    Serial.print(F("V and "));
+    printMilliValues((analogRead(I_SEN) - offsetCurrent) * I_RATIO);
+    Serial.print(F("A.\r\n"));
     digitalWrite(LED_RED, HIGH);
     while (1);
   }
@@ -89,7 +85,7 @@ void setup(void) {
     offsetCurrent >>= 4; // average out
     // ideally should be around 512
     Serial.print(F("Offset is: "));
-    printMilliValues((offsetCurrent * 49) / 10);
+    printMilliValues((offsetCurrent * I_RATIO) / 10);
     Serial.println(F("V"));
     Serial.println(F("Sensors calibrated."));
   }
@@ -108,36 +104,6 @@ void setup(void) {
     Serial.print(tempSensor.getTempCByIndex(0), DEC);
     Serial.println("C");
   }
-
-  /** RTC Setup */
-  if (!RTC.begin())
-  {
-    Serial.println(F("Couldn't talk to RTC."));
-    digitalWrite(LED_RED, HIGH);
-    while (1);
-  }
-
-  now = RTC.now();
-  if (now.year() == 2000) RTC.adjust(DateTime(F(__DATE__), F(__TIME__))); // updates time to compiler time
-  now = RTC.now();
-  Serial.print(F("Current time & date: "));
-  if (now.hour() < 10) Serial.print(" ");
-  Serial.print(now.hour(), DEC);
-  Serial.print(":");
-  if (now.minute() < 10) Serial.print("0");
-  Serial.print(now.minute(), DEC);
-  Serial.print(":");
-  if (now.second() < 10) Serial.print("0");
-  Serial.print(now.second(), DEC);
-  Serial.print(" ");
-  if (now.day() < 10) Serial.print("0");
-  Serial.print(now.day(), DEC);
-  Serial.print("/");
-  if (now.month() < 10) Serial.print("0");
-  Serial.print(now.month(), DEC);
-  Serial.print("/");
-  Serial.print(now.year(), DEC);
-  Serial.println();
 
   /** Start setting up log file on SD Card */
   Serial.println(F("Initializing SD card..."));
@@ -169,11 +135,11 @@ void setup(void) {
   }
 
   /** Write header to file */
-  logFile.println("millis,Unix,Voltage (mV),Current (mA),Power(W),Delta,");
+  logFile.println("millis,Voltage (mV),Current (mA),Power(W),Delta,");
   logFile.close();
 
   /** Ready to start test */
-  timeElapsed = 0;
+  Serial.println(F("Connect battery..."));
   digitalWrite(LED_GRN, HIGH);
   delay(10);
   Serial.print(F("Waiting for Go button...\t"));
@@ -182,7 +148,7 @@ void setup(void) {
   digitalWrite(LED_GRN, LOW);
   digitalWrite(LOAD_ENB, HIGH); // enable the load
   Serial.println("Going!");
-
+  timeElapsed = 0;
 
 }
 
@@ -197,7 +163,6 @@ void loop(void) {
 
     // sample time
     unsigned long tempMillis = millis();
-    now = RTC.now();
 
     // voltage and current
     unsigned int tempVoltage = 0x00;
@@ -205,8 +170,8 @@ void loop(void) {
 
     for (int i = 0x00; i < 4; i++)
     {
-      tempVoltage = analogRead(V_SEN);
-      tempCurrent = analogRead(I_SEN);
+      tempVoltage += analogRead(V_SEN);
+      tempCurrent += analogRead(I_SEN);
       delay(1);
     }
 
@@ -233,9 +198,9 @@ void loop(void) {
     }
 
     // if within min/max limits then continue
-    if ((tempVoltage < VOLTAGE_MAX) & (tempVoltage > VOLTAGE_MIN) & (digitalRead(BUTTON) != 0) & (lineCounter <= 65535))
+    if ((tempVoltage < VOLTAGE_MAX) & (tempVoltage > VOLTAGE_MIN) & (lineCounter <= 65535))
     {
-      lineCounter = updateLog(tempMillis, now.unixtime(), tempVoltage, tempCurrent, lineCounter); // save to SD card
+      lineCounter = updateLog(tempMillis, tempVoltage, tempCurrent, lineCounter); // save to SD card
       digitalWrite(LED_GRN, LOW);
     }
     else
@@ -243,9 +208,9 @@ void loop(void) {
       // if min/max limits exceeded then finish
       if (lineCounter > 3)
       {
-        logFile.print(",,,,,=SUM(F3:F"); logFile.print(lineCounter - 1, DEC); logFile.print("),WHr");
+        logFile.print(",,,,=SUM(E3:E"); logFile.print(lineCounter - 1, DEC); logFile.print("),WHr");
         logFile.println(); lineCounter++;
-        logFile.print(",,,,,=F"); logFile.print(lineCounter - 1, DEC); logFile.println("*36,AHr");
+        logFile.print(",,,,=E"); logFile.print(lineCounter - 1, DEC); logFile.println("*36,AHr");
         logFile.println(); lineCounter++;
         logFile.close(); // close it to avoid corruption
       }
@@ -256,6 +221,18 @@ void loop(void) {
       while (1); // stop test!
     }
   }
+
+  /* Poor attempt at emergency stop
+  
+  if (digitalRead(BUTTON) != 0 &&)
+  {
+    // go button pushed, request stop!
+    digitalWrite(LED_RED, HIGH);
+    digitalWrite(LOAD_ENB, LOW); // disable load
+    Serial.println(F("Finished test!"));
+    while (1); // stop test!
+  }
+  */
 }
 
 void printMilliValues(unsigned int numb) {
@@ -268,14 +245,13 @@ void printMilliValues(unsigned int numb) {
 }
 
 
-unsigned long updateLog(unsigned long currentMillis, unsigned long currentUnix, unsigned int voltage, int current, unsigned long lineCount)
+unsigned long updateLog(unsigned long currentMillis, unsigned int voltage, int current, unsigned long lineCount)
 {
   logFile.print(currentMillis); logFile.print(", "); // arduino millis time
-  logFile.print(currentUnix); logFile.print(", "); // unix time
   logFile.print(voltage); logFile.print(", "); // voltage
-  logFile.print(current); logFile.print(", "); // current
-  logFile.print("=(C"); logFile.print(lineCount, DEC); logFile.print("/1000)*(D"); logFile.print(lineCount, DEC); logFile.print("/1000)"); logFile.print(", "); // power
-  if (lineCount <= 2); logFile.print("=(E"); logFile.print(lineCount - 1, DEC); logFile.print("-E"); logFile.print(lineCount, DEC); logFile.print(")*((A"); logFile.print(lineCount, DEC); logFile.print("-A"); logFile.print(lineCount - 1, DEC); logFile.print(")/3600000)"); logFile.print(", "); // incrimental power
+  logFile.print(current); logFile.print(","); // current
+  logFile.print("=(B"); logFile.print(lineCount, DEC); logFile.print("/1000)*(C"); logFile.print(lineCount, DEC); logFile.print("/1000)"); logFile.print(","); // power
+  if (lineCount <= 2); logFile.print("=(D"); logFile.print(lineCount - 1, DEC); logFile.print("-D"); logFile.print(lineCount, DEC); logFile.print(")*((A"); logFile.print(lineCount, DEC); logFile.print("-A"); logFile.print(lineCount - 1, DEC); logFile.print(")/3600000)"); logFile.print(","); // incrimental power
   logFile.println(); lineCount++;
   logFile.close(); // close it to avoid corruption
 
