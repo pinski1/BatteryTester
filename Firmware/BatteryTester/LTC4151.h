@@ -27,23 +27,52 @@ public:
 	LTC4151();
 	void begin();
 	void setSenseResistor(unsigned int senseResistor);
-	unsigned int getVoltage(void);
 	unsigned int getCurrent(void);
+	unsigned int getVoltage(void);
 	unsigned int getAux(void);
 
 
 };
 
-
 void LTC4151::setSenseResistor(unsigned int senseResistor) {
 	_senseResistor = senseResistor;
+}
+
+unsigned int LTC4151::getCurrent(void) {
+	
+	unsigned int readCurrent;
+	
+	// read AIN registers
+	Wire.beginTransmission(_address);
+	Wire.write(byte(REG_SENSE_A));
+	Wire.endTransmission();
+	Wire.requestFrom(_address, 2);
+	if( 2 <= Wire.available())
+	{
+		readCurrent = Wire.read();
+		readCurrent = (readCurrent << 8);
+		readCurrent = readCurrent | Wire.read();
+	}
+	
+	// assemble voltage across resistor
+	if(readCurrent & MASK_BUSY_BIT)// if bit[3] 1 = busy, 0 complete
+	readCurrent >>= 4;
+	
+	// multiply by AIN_LSB uV
+	readCurrent *= AIN_LSB;
+	
+	// divide by _senseResistor
+	readCurrent /= _senseResistor;
+	
+	
+	return readCurrent;
 }
 
 unsigned int LTC4151::getVoltage(void) {
 	
 	unsigned int readVoltage;
 	
-	// read AIN registers
+	// read VIN registers
 	Wire.beginTransmission(_address);
 	Wire.write(byte(REG_VIN_C));
 	Wire.endTransmission();
@@ -68,36 +97,6 @@ unsigned int LTC4151::getVoltage(void) {
 	return readVoltage;
 }
 
-unsigned int LTC4151::getCurrent(void) {
-	
-	unsigned int readCurrent;
-	
-	// read AIN registers
-	Wire.beginTransmission(_address);
-	Wire.write(byte(REG_SENSE_A));
-	Wire.endTransmission();
-	Wire.requestFrom(_address, 2);
-	if( 2 <= Wire.available())
-	{
-		readCurrent = Wire.read();
-		readCurrent = (readCurrent << 8);
-		readCurrent = readCurrent | Wire.read();
-	}
-	
-	// assemble voltage across resistor
-	if(readCurrent & MASK_BUSY_BIT)// if B3 1 = busy, 0 complete
-	readCurrent >>= 4;
-	
-	// multiply by AIN_LSB uV
-	readCurrent *= AIN_LSB;
-	
-	// divide by _senseResistor
-	readCurrent /= _senseResistor;
-	
-	
-	return readCurrent;
-}
-
 unsigned int LTC4151::getAux(void) {
 	
 	unsigned int readAux;
@@ -115,15 +114,14 @@ unsigned int LTC4151::getAux(void) {
 	}
 	
 	// assemble voltage across resistor
-	if(readAux & MASK_BUSY_BIT)// if B3 1 = busy, 0 complete
+	if(readAux & MASK_BUSY_BIT)// if bit[3] 1 = busy, 0 complete
 	readAux >>= 4;
 	
 	// multiply by XIN_LSB uV
 	readAux *= XIN_LSB;
 	
 	// convert to millivolts
-	readAux /= 1000;
-	
+	readAux /= 1000;	
 	
 	return readAux;
 }
