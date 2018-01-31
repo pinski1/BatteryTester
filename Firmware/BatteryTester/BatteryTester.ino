@@ -2,16 +2,14 @@
     @author Pinski1
     @date 20/03/2016
 
-    @detailed Discharges a large battery (36V 10-16Ah) via a load logging voltage and current regularly for capacity calculation.
+    @detailed Discharges a large battery (36V 10-16Ah) via a load, logging voltage and current regularly for capacity calculation.
     Needs:
       Arduino Uno
       Adafruit DataLogger shield or similar
       Relay
       Load (2x paralleled 10 ohm 200 Watt power resistors)
       Voltage and current monitors (potential divider and ACS712)
-	  DS18B20 temperature sensors
-
-      Note: RTC is only really used to sanity check 'millis()'
+      DS18B20 temperature sensors
 */
 #include <SD.h>
 #include <Wire.h>
@@ -25,6 +23,7 @@
 #define LOG_INTERVAL  10000 // in milliseconds
 #define V_RATIO       46 // R1 = 100k, R2 = 12k, result in milliVolts, +0.94% error
 #define I_RATIO       49 // ACS712, 20A, result in milliAmps, +0.35% error
+unsigned char num_temp = 0;
 
 /** Pin Definitions */
 #define LED_RED       3
@@ -91,6 +90,7 @@ void setup(void) {
   }
 
   /** Setup temperature sensor(s) */
+  num_temp = tempSensor.getDeviceCount();
   if (tempSensor.getDeviceCount() < 1)
   {
     Serial.println(F("Couldn't talk to DS18B20 temperature sensors."));
@@ -135,7 +135,7 @@ void setup(void) {
   }
 
   /** Write header to file */
-  logFile.println("millis,Voltage (mV),Current (mA),Power(W),Delta,");
+  logFile.println("milliseconds,Voltage (mV),Current (mA),Power (W),Delta,Temperature (C),");
   logFile.close();
 
   /** Ready to start test */
@@ -164,7 +164,7 @@ void loop(void) {
     // sample time
     unsigned long tempMillis = millis();
 
-    // voltage and current
+    // sample voltage and current
     unsigned int tempVoltage = 0x00;
     int tempCurrent = 0x00;
 
@@ -177,6 +177,11 @@ void loop(void) {
 
     tempVoltage = (tempVoltage >> 2) * V_RATIO; // in millivolts
     tempCurrent = (((tempCurrent >> 2) - offsetCurrent) * I_RATIO); // in milliamps
+	  
+    // sample temperature
+    tempSensor.requestTemperatures();
+    tempSensor.getTempCByIndex(0); // returns temperature as floating point
+    tempSensor.getTemp(0); // returns temperature in 1/128 of a degC
 
     if ((lineCounter - 2) % 5 == 0)
     {
@@ -200,7 +205,7 @@ void loop(void) {
     // if within min/max limits then continue
     if ((tempVoltage < VOLTAGE_MAX) & (tempVoltage > VOLTAGE_MIN) & (lineCounter <= 65535))
     {
-      lineCounter = updateLog(tempMillis, tempVoltage, tempCurrent, lineCounter); // save to SD card
+      lineCounter = updateLog(tempMillis, tempVoltage, tempCurrent, -300, lineCounter); // save to SD card
       digitalWrite(LED_GRN, LOW);
     }
     else
@@ -245,14 +250,15 @@ void printMilliValues(unsigned int numb) {
 }
 
 
-unsigned long updateLog(unsigned long currentMillis, unsigned int voltage, int current, unsigned long lineCount)
+unsigned long updateLog(unsigned long currentMillis, unsigned int voltage, int current, int temperature, unsigned long lineCount)
 {
   logFile.print(currentMillis); logFile.print(", "); // arduino millis time
   logFile.print(voltage); logFile.print(", "); // voltage
   logFile.print(current); logFile.print(","); // current
   logFile.print("=(B"); logFile.print(lineCount, DEC); logFile.print("/1000)*(C"); logFile.print(lineCount, DEC); logFile.print("/1000)"); logFile.print(","); // power
-  if (lineCount <= 2); logFile.print("=(D"); logFile.print(lineCount - 1, DEC); logFile.print("-D"); logFile.print(lineCount, DEC); logFile.print(")*((A"); logFile.print(lineCount, DEC); logFile.print("-A"); logFile.print(lineCount - 1, DEC); logFile.print(")/3600000)"); logFile.print(","); // incrimental power
-  logFile.println(); lineCount++;
+  if (lineCount <= 2); logFile.print("=(D"); logFile.print(lineCount - 1, DEC); logFile.print("-D"); logFile.print(lineCount, DEC); logFile.print(")*((A"); logFile.print(lineCount, DEC); logFile.print("-A"); logFile.print(lineCount - 1, DEC); logFile.print(")/3600000)"); logFile.print(","); // incremental power
+  //logFile.print(); logFile.print// temperature
+  logFile.println(temperature); lineCount++;
   logFile.close(); // close it to avoid corruption
 
   return lineCount;
