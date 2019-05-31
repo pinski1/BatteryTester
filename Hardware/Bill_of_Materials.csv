@@ -1,9 +1,16 @@
 Qty,Description,"Info URL","Store URL"
-4,"10Ω 200W Resistors",,eBay
-1,"Laser cut enclosure",,
+4,"10Ω 200W Resistors",,"https://www.ebay.co.uk/itm/382420422770"
+1,"Laser cut enclosure",,"https://www.slecuk.com/balsa-wood/6.0-x-600-x-900mm--15-64--24--x-36---PW1508.html"
 8,"Nylon Bolts",,
 8,"Nylon spacers",,
 8,"Nylon nuts",,
-1,"Arduino M0",,
-?,"Temp Sensors",,
-1,"LTC4151 Breakout",,
+8,"Fan bolts",,
+8,"Fan nuts",,
+?,"Enclosure bolts",,
+?,"Enclosure nuts",,
+5,"Temp Sensors",,"https://www.ebay.co.uk/itm/162692252714"
+1,"LTC4151 Breakout","https://oshpark.com/shared_projects/XFzDe2Zd",
+1,"Arduino",,"https://www.ebay.co.uk/itm/273709216115"
+1,"LCD Shield",,"https://www.ebay.co.uk/itm/123483520687"
+1,"uSD Card adaptor",,
+1,"12V Adaptor",,"https://www.ebay.co.uk/itm/122628774980"
